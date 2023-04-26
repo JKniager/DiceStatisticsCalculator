@@ -2,6 +2,7 @@ from enum import Enum, auto
 import math
 import queue
 from queue import LifoQueue
+from typing import List, Tuple
 
 
 class Function:
@@ -158,6 +159,9 @@ class InvalidInfixExpressionError(Exception):
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+class BadFormulaFormatError(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
 
 class CombinerFactory:
     operators = {
@@ -177,6 +181,34 @@ class CombinerFactory:
     }
     
     @staticmethod
+    def formula_split(f: str) -> List[str]:
+        working_string = "".join(f.split())
+        working_string = working_string.replace(",", "")
+
+        out = []
+        num_string = ""
+        decimal_last = False
+        for c in working_string:
+            if c.isdigit():
+                num_string += c
+                decimal_last = False
+            elif c == '.':
+                if decimal_last:
+                    raise BadFormulaFormatError("Two decimal points found next to each other!")
+                num_string += c
+                decimal_last = True
+            elif len(num_string) > 0:
+                out.append(num_string)
+                num_string = ""
+                out.append(c.lower())
+        
+        if len(num_string) > 0:
+            out.append(num_string)
+        
+        return out
+            
+
+    @staticmethod
     def is_operator(c: str) -> bool:
         return c in CombinerFactory.operators
     
@@ -190,11 +222,11 @@ class CombinerFactory:
     
     def __init__(self, equation: str):
         self.equation = equation
-        self.instructions = equation.split()
     
     def constructCombinerPostfix(self):
         stack = []
-        for i in self.instructions:
+        instructions = self.equation.split()
+        for i in instructions:
             if i.isnumeric():
                 stack.append(Constant(int(i)))
             elif i in self.operators:
@@ -206,14 +238,15 @@ class CombinerFactory:
         return stack[0]
     
     def constructCombiner(self):
-        if len(self.instructions) == 0:
+        instructions = CombinerFactory.formula_split(self.equation)
+        if len(instructions) == 0:
             return None
 
         operator_stack = LifoQueue()
         number_stack = LifoQueue()
 
         expecting_number = True
-        for i in self.instructions:
+        for i in instructions:
             if CombinerFactory.is_operator(i):
                 if expecting_number:
                     raise InvalidInfixExpressionError(f"Expression '{self.equation}' is misformatted!")
@@ -284,6 +317,29 @@ class CombinerFactory:
 
         return number_stack.get_nowait()
 
+
+class EmptyFormulaGivenError(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+
+
+def dice_calculator_wrapper(formula: str) -> Tuple[List[float], List[float]]:
+    cf = CombinerFactory(formula)
+    co = cf.constructCombiner()
+    if co is None:
+        raise EmptyFormulaGivenError("Given formula was an empty string!")
+
+    sc = StatCalculator(co)
+    sc.calcStats()
+    stats = sc.iterateValues()
+    outcomes = []
+    quantities = []
+
+    for s in stats:
+        outcomes.append(s[0])
+        quantities.append(s[1] / sc.total_combinations)
+    
+    return (outcomes, quantities)
 
 def main():
     cf = CombinerFactory("3 d 4 - 3 + 3 d 6")
